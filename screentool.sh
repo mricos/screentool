@@ -1,8 +1,10 @@
 #!/bin/bash
 # screentool.sh - Main dispatcher script for screen recording
 
-# Define script directory
-SCRIPT_DIR="$(dirname "$0")"
+# Define script directory and default paths
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+export ST_SRC=${ST_SRC:-"$HOME/src/screentool"}
+export ST_DIR=${ST_DIR:-"$HOME/recordings"}
 
 # Load module scripts
 source "$SCRIPT_DIR/screentool_env.sh"
@@ -25,23 +27,17 @@ check_dependencies() {
 
 check_dependencies
 
-# Load environment variables from the config file if available
-if [ -f "$ENV_CONFIG" ]; then
-  source "$ENV_CONFIG"
-fi
+# Load environment variables
+load_env
+
+# Ensure ST_DIR exists
+mkdir -p "$ST_DIR"
 
 # List available X displays
-list_displays_OLD() {
-  echo "Available X Displays:"
-  ls /tmp/.X11-unix/ | sed 's/X/:/' | nl
-}
-
-
 list_displays() {
   echo "Available X Displays:"
   xrandr --query | grep " connected" | awk '{print NR, $1, $3}'
 }
-
 
 select_display() {
   echo "Selecting display..."
@@ -64,13 +60,67 @@ select_display() {
   save_env
 }
 
-
 case "$1" in
-  start)
-    start_recording "$2"
+  record)
+    record "$2"
     ;;
   play)
     play_recording "$2"
+    ;;
+  list)
+    list_recordings
+    ;;
+  clip)
+    case "$2" in
+      add)
+        [ -z "$3" -o -z "$4" -o -z "$5" -o -z "$6" ] && { 
+          echo "Usage: $0 clip add <filename> <start> <duration> <label>"
+          echo "Examples:"
+          echo "  $0 clip add recording.mp4 1h2m 30s intro"
+          echo "  $0 clip add recording.mp4 01:02:00 00:00:30 intro"
+          echo "  $0 clip add recording.mp4 3600 30 intro"
+          exit 1
+        }
+        add_marker "$3" "$4" "$5" "$6"
+        ;;
+      remove)
+        [ -z "$3" -o -z "$4" ] && { 
+          echo "Usage: $0 clip remove <filename> <label>"
+          echo "Example: $0 clip remove recording.mp4 intro"
+          exit 1
+        }
+        remove_marker "$3" "$4"
+        ;;
+      extract)
+        [ -z "$3" -o -z "$4" ] && {
+          echo "Usage: $0 clip extract <filename> <label>"
+          echo "Example: $0 clip extract recording.mp4 intro"
+          exit 1
+        }
+        # Get clip points from clips.txt
+        if [ -f "$ST_DIR/clips.txt" ]; then
+          clip_info=$(awk -F: -v file="$3" -v label="$4" '$1 == file && $4 == label {print $2 ":" $3}' "$ST_DIR/clips.txt")
+          if [ -n "$clip_info" ]; then
+            IFS=: read -r start duration <<< "$clip_info"
+            output_file="${3%.*}_${4}.mp4"
+            # Calculate end time by adding duration to start
+            end=$(bc <<< "$start + $duration")
+            ffmpeg -i "$ST_DIR/$3" -ss "$start" -t "$duration" -c copy "$ST_DIR/$output_file"
+            echo "Extracted clip '$4' to $output_file"
+          else
+            echo "Error: Clip point '$4' not found in $3"
+            exit 1
+          fi
+        else
+          echo "Error: No clips file found"
+          exit 1
+        fi
+        ;;
+      *)
+        echo "Usage: $0 clip {add|remove|extract} ..."
+        exit 1
+        ;;
+    esac
     ;;
   info)
     [ -z "$2" ] && { echo "Error: Please specify a file for info."; usage; }
@@ -100,14 +150,7 @@ case "$1" in
     load_env
     ;;
   env)
-    echo "Current Environment Variables:"
-    echo "-------------------------------"
-    if [ -f "$ENV_CONFIG" ]; then
-      cat "$ENV_CONFIG"
-    else
-      echo "No environment configuration file found."
-    fi
-    echo "-------------------------------"
+    env_display
     ;;
   *)
     usage

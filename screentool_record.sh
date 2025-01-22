@@ -2,10 +2,14 @@
 # screentool_record.sh - Screen recording functions for screentool
 
 # Load environment configuration
-ENV_CONFIG="$HOME/.screentool_env"
+ENV_CONFIG="./screentool.env"
 if [ -f "$ENV_CONFIG" ]; then
   source "$ENV_CONFIG"
 fi
+
+# Ensure ST_DIR exists and is absolute
+ST_DIR=${ST_DIR:-"$HOME/recordings"}
+mkdir -p "$ST_DIR"
 
 # Ensure DISPLAY is correctly formatted
 if [[ ! "$DISPLAY" =~ ^:[0-9]+(\.[0-9]+)?$ ]]; then
@@ -13,10 +17,10 @@ if [[ ! "$DISPLAY" =~ ^:[0-9]+(\.[0-9]+)?$ ]]; then
   DISPLAY=":0"
 fi
 
-start_recording() {
+record() {
   timestamp=$(date +'%Y%m%d_%H%M%S')
   prefix=${1:-"screen"}
-  recording_path="$HOME/screen_recordings/${prefix}_$timestamp.mp4"
+  recording_path="$ST_DIR/${prefix}_$timestamp.mp4"
 
   echo "Starting recording: $recording_path"
   echo "Capture region: ${SCREEN_GEOMETRY}"
@@ -24,18 +28,24 @@ start_recording() {
 
   env_display
 
-  # Validate SCREEN_GEOMETRY before passing to FFmpeg
+  # Parse geometry values
+  IFS='x+' read -r WIDTH HEIGHT OFFSET_X OFFSET_Y <<< "$SCREEN_GEOMETRY"
+
+  # Debug output
+  echo "Dimensions: ${WIDTH}x${HEIGHT} at +${OFFSET_X}+${OFFSET_Y}"
+
+  # Validate geometry before passing to FFmpeg
   if [[ ! "$SCREEN_GEOMETRY" =~ ^[0-9]+x[0-9]+\+[0-9]+\+[0-9]+$ ]]; then
-    echo "Error: Invalid SCREEN_GEOMETRY format: $SCREEN_GEOMETRY"
+    echo "Error: Invalid geometry format: $SCREEN_GEOMETRY"
     exit 1
   fi
 
-  # Start recording
+  # Start recording with geometry
   ffmpeg \
       -f x11grab \
       -framerate "$FRAMERATE" \
-      -video_size "$(echo "$SCREEN_GEOMETRY" | cut -d'+' -f1)" \
-      -i "$DISPLAY+$(echo "$SCREEN_GEOMETRY" | cut -d'+' -f2,3)" \
+      -video_size "${WIDTH}x${HEIGHT}" \
+      -i "$DISPLAY+${OFFSET_X}+${OFFSET_Y}" \
       -f pulse \
       -i "$AUDIO_DEVICE_IN" \
       -c:v "$VIDEO_CODEC" \
@@ -51,19 +61,36 @@ start_recording() {
       "$recording_path"
 
   # Create symbolic link to the latest recorded file
-  ln -sf "$recording_path" "$HOME/screen_recordings/latest.mp4"
+  ln -sf "$recording_path" "$ST_DIR/latest.mp4"
 }
 
 # Play the latest or specified recording
 play_recording() {
-  local file="${1:-$HOME/screen_recordings/latest.mp4}"
+  local file="${1:-latest.mp4}"
+  
+  # If file is not absolute path, assume it's relative to ST_DIR
+  if [[ ! "$file" = /* ]]; then
+    file="$ST_DIR/$file"
+  fi
+
+  # Save current directory
+  local current_dir=$(pwd)
+  
+  # Change to ST_DIR for playing
+  cd "$ST_DIR" || exit 1
+  
   if [ ! -f "$file" ]; then
     echo "Error: File not found: $file"
+    cd "$current_dir"
     exit 1
   fi
+  
   echo "Playing: $file"
   summary "$file"
   ffplay "$file"
+  
+  # Return to original directory
+  cd "$current_dir"
 }
 
 # Save DISPLAY variable into the environment file
