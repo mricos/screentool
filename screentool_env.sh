@@ -12,17 +12,19 @@ DIR_ENV="$ST_DIR/screentool.env"
 # Load environment variables from files
 load_env() {
     local found=0
-    
+    [ -n true ] && echo "ST_SRC=$ST_SRC"
+    [ -n true ] && echo "ST_DIR=$ST_DIR"
+
     # First try source directory config
     if [ -f "$SRC_ENV" ]; then
-        echo "Loading environment from $SRC_ENV..."
+        echo "SRC_ENV=$SRC_ENV"
         source "$SRC_ENV"
         found=1
     fi
     
     # Then try recordings directory config (will override if exists)
     if [ -f "$DIR_ENV" ]; then
-        echo "Loading environment from $DIR_ENV..."
+        echo "DIR_ENV=$DIR_ENV"
         source "$DIR_ENV"
         found=1
     fi

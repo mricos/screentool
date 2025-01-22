@@ -3,18 +3,18 @@ usage() {
   echo "Usage: $0 {record|list|info <file>|summary <file>|json <file>|input|output|select|save|load|env}"
   echo ""
   echo "Commands:"
-  echo "  record              Start screen recording in the foreground (Ctrl-C to stop)."
-  echo "  list               List recordings with their properties in a formatted way."
-  echo "  info <file>        Show human-readable info for the given file."
+  echo "  record             Start screen recording (Ctrl-C to stop)."
+  echo "  list               List recordings with their properties."
   echo "  summary <file>     Show a brief summary of the video file."
   echo "  json <file>        Show detailed JSON metadata of the video file."
+  echo "  info <file>        Show human-readable info for the given file."
   echo "  input              Show available audio input devices."
   echo "  output             Show available audio output devices."
   echo "  select             Select audio input and output devices."
-  echo "  save               Save environment variables to the configuration file."
-  echo "  load               Load environment variables from the configuration file."
+  echo "  save               Save environment to ST_DIR/screentool.env."
+  echo "  load               Load environment to ST_DIR/screentool.env."
   echo "  env                Show all environment variables being used."
-  exit 1
+  exit 0
 }
 
 # Parse time format to seconds
