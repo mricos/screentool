@@ -35,66 +35,60 @@ mkdir -p "$ST_DIR"
 
 # List available X displays
 list_displays() {
-  echo "Available X Displays:"
-  xrandr --query | grep " connected" | awk '{print NR, $1, $3}'
+  echo "Available Monitors on $DISPLAY:"
+  xrandr --query | grep " connected" | nl | while read -r num display rest; do
+    geometry=$(echo "$rest" | grep -o '[0-9]\+x[0-9]\++[0-9]\++[0-9]\+')
+    echo "$num. $display ($geometry)"
+  done
 }
 
 select_display() {
-  # First check if DISPLAY is set and valid
-  if [ -z "$DISPLAY" ] || ! xrandr --display "$DISPLAY" &>/dev/null; then
-    # Try to find a valid display
-    for d in $(ls /tmp/.X11-unix/X* | sed 's#/tmp/.X11-unix/X##'); do
-      if xrandr --display ":$d" &>/dev/null; then
-        export DISPLAY=":$d"
-        break
-      fi
-    done
-  fi
-
-  if [ -z "$DISPLAY" ]; then
-    echo "Error: No valid X display found"
-    exit 1
-  fi
-
-  echo "Selecting display (using DISPLAY=$DISPLAY)..."
-  list_displays
-  read -rp "Select display number [current: $SELECTED_DISPLAY]: " display_choice
+  echo "=== Display Selection ==="
+  echo "Available displays:"
+  echo
   
-  # If user just hits enter, keep current selection
-  if [ -z "$display_choice" ]; then
-    echo "Keeping current display: $SELECTED_DISPLAY"
-  else
-    # Get all connected displays with their full information
-    DISPLAYS=$(xrandr --query | grep " connected")
-    
-    # Extract display name based on user selection
-    SELECTED_DISPLAY=$(echo "$DISPLAYS" | awk -v choice="$display_choice" 'NR == choice {print $1}')
+  # Get list of available displays and monitors
+  available_displays=""
+  display_monitors=()
+  for d in $(ls /tmp/.X11-unix/X* | sed 's#/tmp/.X11-unix/X##' | sort -n); do
+    if xrandr --display ":$d" &>/dev/null; then
+      echo "Display :$d"
+      i=1
+      while read -r output mode rest; do
+        geometry=$(echo "$rest" | grep -o '[0-9]\+x[0-9]\++[0-9]\++[0-9]\+')
+        printf "%2d) %-8s (%s)\n" $i "$output" "$geometry"
+        display_monitors+=("$d:$output:$geometry")
+        i=$((i+1))
+      done < <(xrandr --display ":$d" --query | grep " connected")
+      available_displays="$available_displays $d"
+      echo
+    fi
+  done
+
+  # Get current monitor number if set
+  current_num=""
+  if [ -n "$SELECTED_DISPLAY" ]; then
+    current_num=$(echo "${display_monitors[@]}" | tr ' ' '\n' | nl | grep ":$SELECTED_DISPLAY:" | cut -f1)
   fi
+  
+  read -rp "Select monitor number${current_num:+ [$current_num]}: " monitor_choice
+  monitor_choice=${monitor_choice:-$current_num}
+  monitor_choice=${monitor_choice:-1}
 
-  # Extract full screen geometry
-  FULL_GEOMETRY=$(echo "$DISPLAYS" | grep "^$SELECTED_DISPLAY " | awk '{
-    for (i=2; i<=NF; i++) {
-      if ($i ~ /^[0-9]+x[0-9]+\+[0-9]+\+[0-9]+$/) {
-        print $i
-        break
-      }
-      if ($i == "primary" && $(i+1) ~ /^[0-9]+x[0-9]+\+[0-9]+\+[0-9]+$/) {
-        print $(i+1)
-        break
-      }
-    }
-  }')
-
-  if [ -z "$SELECTED_DISPLAY" ] || [ -z "$FULL_GEOMETRY" ]; then
-    echo "Error: Invalid selection. Please try again."
+  if [[ ! "$monitor_choice" =~ ^[0-9]+$ ]] || [ "$monitor_choice" -lt 1 ] || [ "$monitor_choice" -gt ${#display_monitors[@]} ]; then
+    echo "Error: Invalid monitor selection"
     exit 1
   fi
 
-  # Parse full geometry into components
+  # Get selected monitor info
+  IFS=: read -r display_num SELECTED_DISPLAY FULL_GEOMETRY <<< "${display_monitors[$((monitor_choice-1))]}"
+  export DISPLAY=":$display_num"
+
+  # Parse geometry for recording options
   IFS=x+ read -r width height offset_x offset_y <<< "$FULL_GEOMETRY"
 
   # Display recording options
-  echo "Recording options for $SELECTED_DISPLAY:"
+  echo -e "\nRecording options for $SELECTED_DISPLAY:"
   echo "1. Full screen (${width}x${height})"
   echo "2. HD (1920x1080)"
   echo "3. Custom (default: 1280x720)"
@@ -111,8 +105,8 @@ select_display() {
       echo "Current screen size: ${width}x${height}"
       read -rp "Enter custom width [1280]: " custom_width
       read -rp "Enter custom height [720]: " custom_height
-      read -rp "Enter X offset [0]: " custom_x
-      read -rp "Enter Y offset [0]: " custom_y
+      read -rp "Enter X offset from monitor left [0]: " custom_x
+      read -rp "Enter Y offset from monitor top [0]: " custom_y
       
       # Use defaults if empty
       custom_width=${custom_width:-1280}
@@ -120,11 +114,25 @@ select_display() {
       custom_x=${custom_x:-0}
       custom_y=${custom_y:-0}
       
-      # Calculate final position
+      # Calculate final position relative to monitor's position
+      # Add monitor's offset to custom offset
       final_x=$((offset_x + custom_x))
       final_y=$((offset_y + custom_y))
       
+      # Validate custom geometry stays within monitor bounds
+      if [ "$custom_x" -lt 0 ] || [ "$custom_y" -lt 0 ] || \
+         [ "$((custom_x + custom_width))" -gt "$width" ] || \
+         [ "$((custom_y + custom_height))" -gt "$height" ]; then
+        echo "Warning: Custom geometry extends beyond monitor bounds"
+      fi
+      
+      # Set geometry with absolute coordinates
       SCREEN_GEOMETRY="${custom_width}x${custom_height}+${final_x}+${final_y}"
+      
+      # Show both relative and absolute positions for clarity
+      echo "Recording area will be ${custom_width}x${custom_height}"
+      echo "  Relative to $SELECTED_DISPLAY: +${custom_x},+${custom_y}"
+      echo "  Absolute screen position: +${final_x},+${final_y}"
       ;;
     *)
       echo "Invalid option selected. Please try again."

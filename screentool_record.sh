@@ -45,7 +45,7 @@ record() {
       -f x11grab \
       -framerate "$FRAMERATE" \
       -video_size "${WIDTH}x${HEIGHT}" \
-      -i "$DISPLAY+${OFFSET_X}+${OFFSET_Y}" \
+      -i "$DISPLAY+${OFFSET_X},${OFFSET_Y}" \
       -f pulse \
       -i "${AUDIO_DEVICE_IN:-@DEFAULT_SOURCE@}" \
       -c:v "$VIDEO_CODEC" \

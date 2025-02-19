@@ -8,8 +8,9 @@ format_device_name() {
   echo "$device" | sed -E '
     # Keep USB IDs together
     s/(usb-[A-Za-z0-9_-]+)/\1@/g
-    # Break only at dots
-    s/\./.\n    /g
+    # Break at dots except last component
+    s/([^.]+)\.([^.]+\.[^.]+$)/\1\n    \2/g
+    s/([^.]+)\.([^.]+$)/\1\n    \2/g
     # Remove extra spaces
     s/  +/ /g
     # Restore USB IDs
@@ -25,13 +26,10 @@ list_audio_inputs() {
   pactl list sources short | awk '{print NR". "$2}' | while read -r num dev; do
     formatted=$(format_device_name "$dev")
     if [[ $dev =~ "monitor" ]]; then
-      echo "$num. $formatted"
-      echo "      (records system audio)"
+      echo "$num. $formatted (records system audio)"
     else
-      echo "$num. $formatted"
-      echo "      (records from device)"
+      echo "$num. $formatted (records from device)"
     fi
-    echo
     echo
   done
 }
@@ -53,43 +51,61 @@ select_audio() {
   echo "Selecting audio input device..."
   list_audio_inputs
   
-  # Get current device number if set
+  # Get current device number and name if set
   current_num=""
+  current_name=""
   if [ -n "$AUDIO_DEVICE_IN" ]; then
     current_num=$(pactl list sources short | awk -v dev="$AUDIO_DEVICE_IN" '{if ($2 == dev) print NR}')
+    current_name="$AUDIO_DEVICE_IN"
   fi
   
-  # Show prompt with current device number
-  read -rp "Enter PulseAudio device number${current_num:+ [$current_num]}: " input_choice
-  
-  # If user just hits enter, keep current selection
-  if [ -z "$input_choice" ] && [ -n "$AUDIO_DEVICE_IN" ]; then
-    echo "Keeping current input device: $AUDIO_DEVICE_IN"
+  # Show prompt with current device number and name
+  if [ -n "$current_num" ]; then
+    echo "Current: $current_name"
+    read -rp "Enter PulseAudio device number [$current_num]: " input_choice
+    input_choice=${input_choice:-$current_num}
   else
+    read -rp "Enter PulseAudio device number: " input_choice
+  fi
+  
+  # Process selection
+  if [ -n "$input_choice" ]; then
     AUDIO_DEVICE_IN=$(pactl list sources short | awk -v choice="$input_choice" 'NR==choice {print $2}')
+    if [ -z "$AUDIO_DEVICE_IN" ]; then
+      echo "Error: Invalid selection"
+      exit 1
+    fi
+    echo "Selected input device: $AUDIO_DEVICE_IN"
   fi
 
   echo -e "\nSelecting audio output device..."
   list_audio_outputs
   
-  # Get current output device number if set
+  # Get current output device number and name if set
   current_num=""
+  current_name=""
   if [ -n "$AUDIO_DEVICE_OUT" ]; then
     current_num=$(pactl list sinks short | awk -v dev="$AUDIO_DEVICE_OUT" '{if ($2 == dev) print NR}')
+    current_name="$AUDIO_DEVICE_OUT"
   fi
   
-  read -rp "Enter PulseAudio device number${current_num:+ [$current_num]}: " output_choice
-  
-  # If user just hits enter, keep current selection
-  if [ -z "$output_choice" ] && [ -n "$AUDIO_DEVICE_OUT" ]; then
-    echo "Keeping current output device: $AUDIO_DEVICE_OUT"
+  # Show prompt with current device number and name
+  if [ -n "$current_num" ]; then
+    echo "Current: $current_name"
+    read -rp "Enter PulseAudio device number [$current_num]: " output_choice
+    output_choice=${output_choice:-$current_num}
   else
-    AUDIO_DEVICE_OUT=$(pactl list sinks short | awk -v choice="$output_choice" 'NR==choice {print $2}')
+    read -rp "Enter PulseAudio device number: " output_choice
   fi
-
-  if [ -z "$AUDIO_DEVICE_IN" ] || [ -z "$AUDIO_DEVICE_OUT" ]; then
-    echo "Error: Invalid selection. Please try again."
-    exit 1
+  
+  # Process selection
+  if [ -n "$output_choice" ]; then
+    AUDIO_DEVICE_OUT=$(pactl list sinks short | awk -v choice="$output_choice" 'NR==choice {print $2}')
+    if [ -z "$AUDIO_DEVICE_OUT" ]; then
+      echo "Error: Invalid selection"
+      exit 1
+    fi
+    echo "Selected output device: $AUDIO_DEVICE_OUT"
   fi
 }
 
@@ -122,7 +138,17 @@ configure_recording() {
     1)
       export ST_AUDIO_BACKEND="pulse"
       list_audio_inputs
-      read -rp "Enter PulseAudio device number: " pulse_choice
+      
+      # Get current device number if set
+      current_num=""
+      if [ -n "$ST_PULSE_IN_DEVICE" ]; then
+        current_num=$(pactl list sources short | awk -v dev="$ST_PULSE_IN_DEVICE" '{if ($2 == dev) print NR}')
+        echo "Current: $ST_PULSE_IN_DEVICE"
+      fi
+      
+      read -rp "Enter PulseAudio device number ${current_num:+[$current_num]}: " pulse_choice
+      pulse_choice=${pulse_choice:-$current_num}
+      
       if [ -n "$pulse_choice" ]; then
         device=$(pactl list sources short | awk -v choice="$pulse_choice" 'NR==choice {print $2}')
         if [ -n "$device" ]; then
@@ -139,7 +165,18 @@ configure_recording() {
     2)
       export ST_AUDIO_BACKEND="alsa"
       list_audio_inputs
-      read -rp "Enter ALSA device number: " alsa_choice
+      
+      # Get current ALSA device number if set
+      current_num=""
+      if [ -n "$ST_ALSA_IN_DEVICE" ] && [[ "$ST_ALSA_IN_DEVICE" =~ ^hw:[0-9]+$ ]]; then
+        card_num=${ST_ALSA_IN_DEVICE#hw:}
+        current_num=$(arecord -l | grep "^card" | awk -v card="$card_num" '$2 == card {print NR}')
+        echo "Current: $ST_ALSA_IN_DEVICE"
+      fi
+      
+      read -rp "Enter ALSA device number ${current_num:+[$current_num]}: " alsa_choice
+      alsa_choice=${alsa_choice:-$current_num}
+      
       if [ -n "$alsa_choice" ]; then
         device=$(arecord -l | grep "^card" | sed -n "${alsa_choice}p" | sed 's/^card \([0-9]*\):.*$/hw:\1/')
         if [ -n "$device" ]; then
@@ -167,35 +204,54 @@ configure_playback() {
     1)
       export ST_AUDIO_OUT_BACKEND="pulse"
       list_audio_outputs
-      read -rp "Enter PulseAudio device number: " pulse_choice
+      
+      # Get current device number if set
+      current_num=""
+      if [ -n "$ST_PULSE_OUT_DEVICE" ]; then
+        current_num=$(pactl list sinks short | awk -v dev="$ST_PULSE_OUT_DEVICE" '{if ($2 == dev) print NR}')
+        echo "Current: $ST_PULSE_OUT_DEVICE"
+      fi
+      
+      read -rp "Enter PulseAudio device number ${current_num:+[$current_num]}: " pulse_choice
+      pulse_choice=${pulse_choice:-$current_num}
+      
       if [ -n "$pulse_choice" ]; then
-        # Get the actual device name from the number
         device=$(pactl list sinks short | awk -v choice="$pulse_choice" 'NR==choice {print $2}')
         if [ -n "$device" ]; then
-          export ST_AUDIO_OUT_DEVICE="$device"
+          export ST_PULSE_OUT_DEVICE="$device"
+          export ST_AUDIO_OUT_DEVICE="$device"  # For compatibility
         else
           echo "Invalid device number, using default"
+          export ST_PULSE_OUT_DEVICE="@DEFAULT_SINK@"
           export ST_AUDIO_OUT_DEVICE="@DEFAULT_SINK@"
         fi
-      else
-        export ST_AUDIO_OUT_DEVICE="@DEFAULT_SINK@"
       fi
       ;;
     2)
       export ST_AUDIO_OUT_BACKEND="alsa"
       list_audio_outputs
-      read -rp "Enter ALSA device number: " alsa_choice
+      
+      # Get current ALSA device number if set
+      current_num=""
+      if [ -n "$ST_ALSA_OUT_DEVICE" ] && [[ "$ST_ALSA_OUT_DEVICE" =~ ^hw:[0-9]+$ ]]; then
+        card_num=${ST_ALSA_OUT_DEVICE#hw:}
+        current_num=$(aplay -l | grep "^card" | awk -v card="$card_num" '$2 == card {print NR}')
+        echo "Current: $ST_ALSA_OUT_DEVICE"
+      fi
+      
+      read -rp "Enter ALSA device number ${current_num:+[$current_num]}: " alsa_choice
+      alsa_choice=${alsa_choice:-$current_num}
+      
       if [ -n "$alsa_choice" ]; then
-        # Get the actual hw:X device from the number
         device=$(aplay -l | grep "^card" | sed -n "${alsa_choice}p" | sed 's/^card \([0-9]*\):.*$/hw:\1/')
         if [ -n "$device" ]; then
-          export ST_AUDIO_OUT_DEVICE="$device"
+          export ST_ALSA_OUT_DEVICE="$device"
+          export ST_AUDIO_OUT_DEVICE="$device"  # For compatibility
         else
           echo "Invalid device number, using default"
+          export ST_ALSA_OUT_DEVICE="default"
           export ST_AUDIO_OUT_DEVICE="default"
         fi
-      else
-        export ST_AUDIO_OUT_DEVICE="default"
       fi
       ;;
   esac

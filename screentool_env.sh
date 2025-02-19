@@ -38,13 +38,17 @@ load_env() {
 }
 
 save_env() {
-    echo "Saving environment variables to $DIR_ENV..."
-    # Create directory if it doesn't exist
+    echo "Saving environment variables..."
+    
+    # Create directories if they don't exist
+    mkdir -p "$(dirname "$SRC_ENV")"
     mkdir -p "$(dirname "$DIR_ENV")"
     
-    # First, remove the old env file if it exists
+    # Remove old env files
+    rm -f "$SRC_ENV"
     rm -f "$DIR_ENV"
     
+    # Create new env file with current settings
     {
         # Base paths
         echo "export ST_SRC=\"$ST_SRC\""
@@ -54,18 +58,12 @@ save_env() {
         echo "export DISPLAY=\"$DISPLAY\""
         echo "export SCREEN_GEOMETRY=\"$SCREEN_GEOMETRY\""
         
-        # Audio backends
+        # Audio settings
         echo "export ST_AUDIO_BACKEND=\"${ST_AUDIO_BACKEND:-pulse}\""
         echo "export ST_AUDIO_OUT_BACKEND=\"${ST_AUDIO_OUT_BACKEND:-pulse}\""
-        
-        # PulseAudio settings
-        echo "export ST_PULSE_IN_DEVICE=\"${ST_PULSE_IN_DEVICE:-@DEFAULT_SOURCE@}\""
-        echo "export ST_PULSE_OUT_DEVICE=\"${ST_PULSE_OUT_DEVICE:-@DEFAULT_SINK@}\""
+        echo "export ST_PULSE_IN_DEVICE=\"${ST_PULSE_IN_DEVICE}\""
+        echo "export ST_PULSE_OUT_DEVICE=\"${ST_PULSE_OUT_DEVICE}\""
         echo "export ST_BUFFER_SIZE=\"${ST_BUFFER_SIZE:-1024}\""
-        
-        # ALSA settings
-        echo "export ST_ALSA_IN_DEVICE=\"${ST_ALSA_IN_DEVICE:-default}\""
-        echo "export ST_ALSA_OUT_DEVICE=\"${ST_ALSA_OUT_DEVICE:-default}\""
         
         # Video settings
         echo "export VIDEO_CODEC=\"${VIDEO_CODEC:-libx264}\""
@@ -75,13 +73,15 @@ save_env() {
         echo "export COMPRESSION_GOP=\"${COMPRESSION_GOP:-60}\""
         echo "export FRAMERATE=\"${FRAMERATE:-30}\""
         
-        # Audio settings
+        # Audio encoding settings
         echo "export AUDIO_CHANNELS=\"${AUDIO_CHANNELS:-2}\""
         echo "export AUDIO_CODEC=\"${AUDIO_CODEC:-aac}\""
         echo "export AUDIO_BITRATE=\"${AUDIO_BITRATE:-192k}\""
-    } > "$DIR_ENV"
+    } | tee "$SRC_ENV" > "$DIR_ENV"
     
-    echo "Environment saved to $DIR_ENV"
+    echo "Environment saved to:"
+    echo "  $SRC_ENV"
+    echo "  $DIR_ENV"
 }
 
 # Display environment variables
