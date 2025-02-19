@@ -41,28 +41,47 @@ save_env() {
     echo "Saving environment variables to $DIR_ENV..."
     # Create directory if it doesn't exist
     mkdir -p "$(dirname "$DIR_ENV")"
+    
+    # First, remove the old env file if it exists
+    rm -f "$DIR_ENV"
+    
     {
+        # Base paths
         echo "export ST_SRC=\"$ST_SRC\""
         echo "export ST_DIR=\"$ST_DIR\""
+        
+        # Display settings
         echo "export DISPLAY=\"$DISPLAY\""
-        echo "export MARGIN=\"80 0 0 0\""
         echo "export SCREEN_GEOMETRY=\"$SCREEN_GEOMETRY\""
-        echo "export AUDIO_DEVICE_IN=\"$AUDIO_DEVICE_IN\""
-        echo "export AUDIO_DEVICE_OUT=\"$AUDIO_DEVICE_OUT\""
-        echo "export VIDEO_CODEC=\"$VIDEO_CODEC\""
-        echo "export PRESET=\"$PRESET\""
-        echo "export CRF=\"$CRF\""
-        echo "export COMPRESSION_TUNE=\"$COMPRESSION_TUNE\""
-        echo "export COMPRESSION_GOP=\"$COMPRESSION_GOP\""
-        echo "export FRAMERATE=\"$FRAMERATE\""
-        echo "export SCREEN_SIZE=\"$SCREEN_SIZE\""
-        echo "export RATE=\"$RATE\""
-        echo "export BUFFER_SIZE=\"$BUFFER_SIZE\""
-        echo "export PERIOD_SIZE=\"$PERIOD_SIZE\""
-        echo "export AUDIO_CHANNELS=\"$AUDIO_CHANNELS\""
-        echo "export AUDIO_CODEC=\"$AUDIO_CODEC\""
-        echo "export AUDIO_BITRATE=\"$AUDIO_BITRATE\""
+        
+        # Audio backends
+        echo "export ST_AUDIO_BACKEND=\"${ST_AUDIO_BACKEND:-pulse}\""
+        echo "export ST_AUDIO_OUT_BACKEND=\"${ST_AUDIO_OUT_BACKEND:-pulse}\""
+        
+        # PulseAudio settings
+        echo "export ST_PULSE_IN_DEVICE=\"${ST_PULSE_IN_DEVICE:-@DEFAULT_SOURCE@}\""
+        echo "export ST_PULSE_OUT_DEVICE=\"${ST_PULSE_OUT_DEVICE:-@DEFAULT_SINK@}\""
+        echo "export ST_BUFFER_SIZE=\"${ST_BUFFER_SIZE:-1024}\""
+        
+        # ALSA settings
+        echo "export ST_ALSA_IN_DEVICE=\"${ST_ALSA_IN_DEVICE:-default}\""
+        echo "export ST_ALSA_OUT_DEVICE=\"${ST_ALSA_OUT_DEVICE:-default}\""
+        
+        # Video settings
+        echo "export VIDEO_CODEC=\"${VIDEO_CODEC:-libx264}\""
+        echo "export PRESET=\"${PRESET:-veryfast}\""
+        echo "export CRF=\"${CRF:-23}\""
+        echo "export COMPRESSION_TUNE=\"${COMPRESSION_TUNE:-zerolatency}\""
+        echo "export COMPRESSION_GOP=\"${COMPRESSION_GOP:-60}\""
+        echo "export FRAMERATE=\"${FRAMERATE:-30}\""
+        
+        # Audio settings
+        echo "export AUDIO_CHANNELS=\"${AUDIO_CHANNELS:-2}\""
+        echo "export AUDIO_CODEC=\"${AUDIO_CODEC:-aac}\""
+        echo "export AUDIO_BITRATE=\"${AUDIO_BITRATE:-192k}\""
     } > "$DIR_ENV"
+    
+    echo "Environment saved to $DIR_ENV"
 }
 
 # Display environment variables

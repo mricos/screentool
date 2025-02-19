@@ -40,29 +40,128 @@ list_displays() {
 }
 
 select_display() {
-  echo "Selecting display..."
+  # First check if DISPLAY is set and valid
+  if [ -z "$DISPLAY" ] || ! xrandr --display "$DISPLAY" &>/dev/null; then
+    # Try to find a valid display
+    for d in $(ls /tmp/.X11-unix/X* | sed 's#/tmp/.X11-unix/X##'); do
+      if xrandr --display ":$d" &>/dev/null; then
+        export DISPLAY=":$d"
+        break
+      fi
+    done
+  fi
+
+  if [ -z "$DISPLAY" ]; then
+    echo "Error: No valid X display found"
+    exit 1
+  fi
+
+  echo "Selecting display (using DISPLAY=$DISPLAY)..."
   list_displays
-  read -rp "Select display number: " display_choice
+  read -rp "Select display number [current: $SELECTED_DISPLAY]: " display_choice
+  
+  # If user just hits enter, keep current selection
+  if [ -z "$display_choice" ]; then
+    echo "Keeping current display: $SELECTED_DISPLAY"
+  else
+    # Get all connected displays with their full information
+    DISPLAYS=$(xrandr --query | grep " connected")
+    
+    # Extract display name based on user selection
+    SELECTED_DISPLAY=$(echo "$DISPLAYS" | awk -v choice="$display_choice" 'NR == choice {print $1}')
+  fi
 
-  # Extract display name based on user selection
-  SELECTED_DISPLAY=$(xrandr --query | grep " connected" | awk '{print NR, $1}' | awk -v choice="$display_choice" '$1 == choice {print $2}')
+  # Extract full screen geometry
+  FULL_GEOMETRY=$(echo "$DISPLAYS" | grep "^$SELECTED_DISPLAY " | awk '{
+    for (i=2; i<=NF; i++) {
+      if ($i ~ /^[0-9]+x[0-9]+\+[0-9]+\+[0-9]+$/) {
+        print $i
+        break
+      }
+      if ($i == "primary" && $(i+1) ~ /^[0-9]+x[0-9]+\+[0-9]+\+[0-9]+$/) {
+        print $(i+1)
+        break
+      }
+    }
+  }')
 
-  # Extract correct screen geometry (resolution + position), ignoring 'primary'
-  SCREEN_GEOMETRY=$(xrandr --query | grep "^$SELECTED_DISPLAY " | awk '{for (i=3; i<=NF; i++) if ($i ~ /^[0-9]+x[0-9]+\+[0-9]+\+[0-9]+$/) print $i}')
-
-  if [ -z "$SELECTED_DISPLAY" ] || [ -z "$SCREEN_GEOMETRY" ]; then
+  if [ -z "$SELECTED_DISPLAY" ] || [ -z "$FULL_GEOMETRY" ]; then
     echo "Error: Invalid selection. Please try again."
     exit 1
   fi
 
+  # Parse full geometry into components
+  IFS=x+ read -r width height offset_x offset_y <<< "$FULL_GEOMETRY"
+
+  # Display recording options
+  echo "Recording options for $SELECTED_DISPLAY:"
+  echo "1. Full screen (${width}x${height})"
+  echo "2. HD (1920x1080)"
+  echo "3. Custom (default: 1280x720)"
+  read -rp "Select option [1]: " area_choice
+
+  case "$area_choice" in
+    1)
+      SCREEN_GEOMETRY="$FULL_GEOMETRY"
+      ;;
+    2)
+      SCREEN_GEOMETRY="1920x1080+${offset_x}+${offset_y}"
+      ;;
+    3)
+      echo "Current screen size: ${width}x${height}"
+      read -rp "Enter custom width [1280]: " custom_width
+      read -rp "Enter custom height [720]: " custom_height
+      read -rp "Enter X offset [0]: " custom_x
+      read -rp "Enter Y offset [0]: " custom_y
+      
+      # Use defaults if empty
+      custom_width=${custom_width:-1280}
+      custom_height=${custom_height:-720}
+      custom_x=${custom_x:-0}
+      custom_y=${custom_y:-0}
+      
+      # Calculate final position
+      final_x=$((offset_x + custom_x))
+      final_y=$((offset_y + custom_y))
+      
+      SCREEN_GEOMETRY="${custom_width}x${custom_height}+${final_x}+${final_y}"
+      ;;
+    *)
+      echo "Invalid option selected. Please try again."
+      exit 1
+      ;;
+  esac
+
+  export SELECTED_DISPLAY
   export SCREEN_GEOMETRY
+  echo "Selected DISPLAY: $SELECTED_DISPLAY"
   echo "Selected SCREEN_GEOMETRY: $SCREEN_GEOMETRY"
   save_env
 }
 
+configure_all() {
+  echo "=== Audio Input Setup ==="
+  configure_recording
+
+  echo -e "\n=== Audio Output Setup ==="
+  configure_playback
+
+  echo -e "\n=== Display Setup ==="
+  select_display
+  
+  save_env
+  
+  # Show final configuration
+  echo -e "\n=== Current Configuration ==="
+  echo "Audio Input:  ${ST_AUDIO_IN_DEVICE:-@DEFAULT_SOURCE@} (${ST_AUDIO_BACKEND:-pulse})"
+  echo "Audio Output: ${ST_AUDIO_OUT_DEVICE:-@DEFAULT_SINK@} (${ST_AUDIO_OUT_BACKEND:-pulse})"
+  echo "Display:      $SELECTED_DISPLAY"
+  echo "Geometry:     $SCREEN_GEOMETRY"
+}
+
 case "$1" in
   record)
-    record "$2"
+    record "$2" "$SCREEN_GEOMETRY"
     ;;
   play)
     play_recording "$2"
@@ -97,13 +196,11 @@ case "$1" in
           echo "Example: $0 clip extract recording.mp4 intro"
           exit 1
         }
-        # Get clip points from clips.txt
         if [ -f "$ST_DIR/clips.txt" ]; then
           clip_info=$(awk -F: -v file="$3" -v label="$4" '$1 == file && $4 == label {print $2 ":" $3}' "$ST_DIR/clips.txt")
           if [ -n "$clip_info" ]; then
             IFS=: read -r start duration <<< "$clip_info"
             output_file="${3%.*}_${4}.mp4"
-            # Calculate end time by adding duration to start
             end=$(bc <<< "$start + $duration")
             ffmpeg -i "$ST_DIR/$3" -ss "$start" -t "$duration" -c copy "$ST_DIR/$output_file"
             echo "Extracted clip '$4' to $output_file"
@@ -139,9 +236,7 @@ case "$1" in
     list_audio_outputs
     ;;
   select)
-    select_audio
-    select_display
-    save_env
+    configure_all
     ;;
   save)
     save_env
@@ -151,6 +246,9 @@ case "$1" in
     ;;
   env)
     env_display
+    ;;
+  audio)
+    configure_audio
     ;;
   *)
     usage

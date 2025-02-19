@@ -47,7 +47,7 @@ record() {
       -video_size "${WIDTH}x${HEIGHT}" \
       -i "$DISPLAY+${OFFSET_X}+${OFFSET_Y}" \
       -f pulse \
-      -i "$AUDIO_DEVICE_IN" \
+      -i "${AUDIO_DEVICE_IN:-@DEFAULT_SOURCE@}" \
       -c:v "$VIDEO_CODEC" \
       -preset "$PRESET" \
       -crf "$CRF" \
@@ -72,25 +72,17 @@ play_recording() {
   if [[ ! "$file" = /* ]]; then
     file="$ST_DIR/$file"
   fi
-
-  # Save current directory
-  local current_dir=$(pwd)
-  
-  # Change to ST_DIR for playing
-  cd "$ST_DIR" || exit 1
   
   if [ ! -f "$file" ]; then
     echo "Error: File not found: $file"
-    cd "$current_dir"
     exit 1
   fi
   
   echo "Playing: $file"
   summary "$file"
-  ffplay "$file"
-  
-  # Return to original directory
-  cd "$current_dir"
+
+  # Normal video playback with audio
+  ffplay -autoexit -i "$file"
 }
 
 # Save DISPLAY variable into the environment file
