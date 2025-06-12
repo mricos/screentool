@@ -1,0 +1,163 @@
+[1749177582: refactor this file to work with mac s...PLAY="$DISPLAY"" >> "$ENV_CONFIG" }]
+
+To refactor your existing Linux X11-based screen recording tool for use on macOS with a similar command-line interface, we need to make several platform-specific changes. macOS does not use X11 or PulseAudio by default and has different methods for screen capture and audio routing.
+
+🎯 Goals:
+
+- Replace x11grab (X11-specific video capture) → with avfoundation (macOS native).
+- Replace PulseAudio audio device selection → with macOS-compatible avfoundation audio input options.
+- Maintain compatible CLI interface with minimal changes.
+- Fallback support for previously defined environment variables if available.
+
+✅ Refactored Steps:
+
+1. Update screentool.env for Mac
+2. Refactor screentool_record.sh to use avfoundation
+3. Modify check_dependencies for macOS
+4. Disable/replace xrandr and pactl-dependent logic
+5. Optionally install required tools (ffmpeg with avfoundation support)
+
+🔧 Refactor Plan:
+
+1. ✅ screentool.env (macOS version)
+
+# screentool.env (macOS-compatible settings example)
+export ST_SRC="$HOME/src/screentool"
+export ST_DIR="$HOME/recordings"
+export SCREEN_GEOMETRY="1280x720+0+0"   # Not used on Mac
+export ST_AUDIO_BACKEND="avfoundation"
+export ST_AUDIO_OUT_BACKEND="avfoundation"
+export ST_AVFOUNDATION_IN_DEVICE="0"    # default mic
+export VIDEO_CODEC="libx264"
+export PRESET="veryfast"
+export CRF="23"
+export COMPRESSION_TUNE="zerolatency"
+export COMPRESSION_GOP="60"
+export FRAMERATE="30"
+export AUDIO_CHANNELS="2"
+export AUDIO_CODEC="aac"
+export AUDIO_BITRATE="192k"
+
+2. ✅ screentool_record.sh (macOS version)
+
+Update the record function to use avfoundation:
+
+record() {
+  timestamp=$(date +'%Y%m%d_%H%M%S')
+  prefix=${1:-"screen"}
+  recording_path="$ST_DIR/${prefix}_$timestamp.mp4"
+  echo "Starting recording: $recording_path"
+
+  # List devices: ffmpeg -f avfoundation -list_devices true -i ""
+  # Default values
+  in_device="${ST_AVFOUNDATION_IN_DEVICE:-0}"
+
+  # Use capture screen only (video device ":1")
+  # NOTE: On macOS avfoundation takes format: -i "video_input:audio_input"
+  input_spec="1:$in_device"
+
+  ffmpeg \
+    -f avfoundation \
+    -framerate "$FRAMERATE" \
+    -video_size 1280x720 \
+    -i "$input_spec" \
+    -c:v "$VIDEO_CODEC" \
+    -preset "$PRESET" \
+    -crf "$CRF" \
+    -tune "$COMPRESSION_TUNE" \
+    -g "$COMPRESSION_GOP" \
+    -pix_fmt yuv420p \
+    -c:a "$AUDIO_CODEC" \
+    -b:a "$AUDIO_BITRATE" \
+    -ac "$AUDIO_CHANNELS" \
+    -movflags +faststart \
+    "$recording_path"
+
+  ln -sf "$recording_path" "$ST_DIR/latest.mp4"
+}
+
+3. ✅ screentool.sh (Main script)
+
+Adjust dependency check to remove pactl and xrandr:
+
+check_dependencies() {
+  for dep in ffmpeg jq; do
+    if ! command -v "$dep" &>/dev/null; then
+      echo "Error: Required dependency '$dep' not installed."
+      exit 1
+    fi
+  done
+}
+
+You can also add a platform detect step:
+
+OS=$(uname)
+if [[ "$OS" == "Darwin" ]]; then
+  PLATFORM="mac"
+else
+  PLATFORM="linux"
+fi
+
+Then the record logic in screentool.sh becomes:
+
+case "$1" in
+  record)
+    record "$2"
+    ;;
+  ...
+
+And remove/select_display from macOS since it relies on xrandr.
+
+✅ Optional: let record() use screenresolution for auto detection if you want to support custom crop later:
+
+screen_size=$(system_profiler SPDisplaysDataType | grep Resolution | awk '{print $2"x"$4}')
+
+4. ✅ screentool_env.sh — Keep mostly same
+
+But update to set DISPLAY only on Linux:
+
+if [[ "$(uname)" == "Linux" ]]; then
+  export DISPLAY=${DISPLAY:-":0"}
+fi
+
+5. ✅ screentool_audio.sh (mac version)
+
+Replace pactl with list of avfoundation audio devices:
+
+ffmpeg -f avfoundation -list_devices true -i "" 2>&1 | grep "\[AVFoundation input device\]"
+
+let select_audio auto-populate device number (e.g., "0", "1")
+
+🛠 Optional: create new script screentool_mac_audio.sh if you'd like to separate backend logic cleanly.
+
+6. 🧪 Usage Instructions
+
+Once refactored, call with same interface:
+
+./screentool.sh record demo
+
+💡 Note: macOS Mojave and newer require you to give Terminal screen recording and microphone permissions. The ffmpeg command may silently fail unless permissions are granted.
+
+Open System Preferences → Security & Privacy → Screen Recording + Microphone → check Terminal or iTerm.
+
+7. ✅ Install FFmpeg with avfoundation support:
+
+brew install ffmpeg
+
+Sometimes custom build with --enable-avfoundation may be necessary, but official brew installs typically support it.
+
+📎 Summary of Key Changes for macOS Port
+
+| Feature                | Linux (X11 / Pulse)     | macOS (avfoundation)          |
+|------------------------|-------------------------|-------------------------------|
+| Screen capture         | -f x11grab               | -f avfoundation               |
+| Audio capture          | -f pulse                 | -f avfoundation               |
+| Device listing         | pactl, xrandr            | ffmpeg -list_devices true     |
+| Display geometry       | via xrandr, DISPLAY var  | Not applicable by default     |
+| Dependencies           | ffmpeg, jq, pactl, xrandr| ffmpeg, jq                    |
+
+🎉 After you apply these changes, your screentool.sh becomes CLI-compatible on macOS.
+
+Let me know if you'd like the refactored code files themselves in an uploadable format.
+
+[QA/global/517/516/Users/mricos/.qa/db/1749177582.answer ]

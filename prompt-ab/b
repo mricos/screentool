@@ -1,0 +1,251 @@
+[1749177388: refactor this file to work with mac s...) configure_audio ;; *) usage ;; esac]
+
+Refactoring screentool.sh for macOS Compatibility
+
+Below is a refactored version of your screentool.sh main dispatcher script that works on macOS. Since macOS does not use X11 (and has no xrandr, DISPLAY, etc.), we leverage native macOS tools like:
+
+- ffmpeg with avfoundation for screen/audio capture
+- system_profiler and system utilities to infer screen resolution
+- replacing xrandr/ X11 logic with macOS-compatible alternatives
+- replacing pactl (PulseAudio) with ffmpeg avfoundation audio capture
+
+We keep the CLI interface and environment logic as close as possible to the original.
+
+Recommended Directory Tree:
+
+~/src/screentool/ contains:
+
+- screentool.sh              ← this script
+- screentool_env.sh
+- screentool_record.sh
+- screentool_audio.sh
+- screentool_info.sh
+
+📜 screentool.sh (macOS-compatible version)
+
+#!/bin/bash
+# screentool.sh - macOS-compatible screen recording CLI tool
+
+# Default Paths
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+export ST_SRC=${ST_SRC:-"$HOME/src/screentool"}
+export ST_DIR=${ST_DIR:-"$HOME/recordings"}
+
+# Load module scripts
+source "$SCRIPT_DIR/screentool_env.sh"
+source "$SCRIPT_DIR/screentool_record.sh"
+source "$SCRIPT_DIR/screentool_audio.sh"
+source "$SCRIPT_DIR/screentool_info.sh"
+
+# ====================================================================
+# Dependency Check
+# ====================================================================
+check_dependencies() {
+  for dep in ffmpeg jq; do
+    if ! command -v "$dep" &>/dev/null; then
+      echo "Error: Required dependency '$dep' is not installed."
+      exit 1
+    fi
+  done
+}
+
+check_dependencies
+
+# Ensure ST_DIR exists
+mkdir -p "$ST_DIR"
+
+# Detect connected displays (not easily accessible on macOS, fallback to main screen)
+list_displays() {
+  echo "Available Display(s):"
+  resolution=$(system_profiler SPDisplaysDataType | grep Resolution | awk -F: '{print $2}' | xargs)
+  echo "1. Main display ($resolution)"
+}
+
+select_display() {
+  echo "=== Display Selection ==="
+  list_displays
+
+  read -rp "Select display number [1]: " monitor_choice
+  monitor_choice="${monitor_choice:-1}"
+
+  if [ "$monitor_choice" != "1" ]; then
+    echo "Error: Only main display (1) supported on macOS"
+    exit 1
+  fi
+
+  resolution=$(system_profiler SPDisplaysDataType | grep Resolution | head -n1 | awk -F: '{print $2}' | xargs)
+  width=$(echo "$resolution" | awk '{print $1}')
+  height=$(echo "$resolution" | awk '{print $3}')
+
+  echo
+  echo "Recording options:"
+  echo "1. Full screen (${width}x${height})"
+  echo "2. HD (1920x1080)"
+  echo "3. Custom (default: 1280x720)"
+
+  read -rp "Select option [1]: " area_choice
+  case "$area_choice" in
+    1 | "")
+      SCREEN_GEOMETRY="${width}x${height}+0+0"
+      ;;
+    2)
+      SCREEN_GEOMETRY="1920x1080+0+0"
+      ;;
+    3)
+      read -rp "Enter width [1280]: " custom_width
+      read -rp "Enter height [720]: " custom_height
+      read -rp "Enter X offset [0]: " custom_x
+      read -rp "Enter Y offset [0]: " custom_y
+
+      custom_width=${custom_width:-1280}
+      custom_height=${custom_height:-720}
+      custom_x=${custom_x:-0}
+      custom_y=${custom_y:-0}
+
+      SCREEN_GEOMETRY="${custom_width}x${custom_height}+${custom_x}+${custom_y}"
+      ;;
+    *)
+      echo "Invalid option"
+      exit 1
+      ;;
+  esac
+
+  SELECTED_DISPLAY="main"
+  export SELECTED_DISPLAY
+  export SCREEN_GEOMETRY
+
+  echo "Selected display: $SELECTED_DISPLAY"
+  echo "Selected geometry: $SCREEN_GEOMETRY"
+
+  save_env
+}
+
+# Configure audio + display
+configure_all() {
+  echo "=== Audio Input Setup ==="
+  configure_recording
+
+  echo -e "\n=== Display Setup ==="
+  select_display
+
+  echo -e "\n=== Current Configuration ==="
+  echo "Audio Input: ${ST_AUDIO_IN_DEVICE:-default} (avfoundation)"
+  echo "Display: $SELECTED_DISPLAY"
+  echo "Geometry: $SCREEN_GEOMETRY"
+}
+
+case "$1" in
+  record)
+    record "$2" "$SCREEN_GEOMETRY"
+    ;;
+  play)
+    play_recording "$2"
+    ;;
+  list)
+    list_recordings
+    ;;
+  clip)
+    case "$2" in
+      add)
+        [ -z "$3" ] || [ -z "$4" ] || [ -z "$5" ] || [ -z "$6" ] && {
+          echo "Usage: $0 clip add <filename> <start> <duration> <label>"
+          exit 1
+        }
+        add_marker "$3" "$4" "$5" "$6"
+        ;;
+      remove)
+        [ -z "$3" ] || [ -z "$4" ] && {
+          echo "Usage: $0 clip remove <filename> <label>"
+          exit 1
+        }
+        remove_marker "$3" "$4"
+        ;;
+      extract)
+        [ -z "$3" ] || [ -z "$4" ] && {
+          echo "Usage: $0 clip extract <filename> <label>"
+          exit 1
+        }
+        extract_clip "$3" "$4"
+        ;;
+      *)
+        echo "Usage: $0 clip {add|remove|extract} ..."
+        exit 1
+        ;;
+    esac
+    ;;
+  info)
+    [ -z "$2" ] && { echo "Please specify a file"; exit 1; }
+    summary "$2"
+    ;;
+  summary)
+    summary "$2"
+    ;;
+  json)
+    json_metadata "$2"
+    ;;
+  input)
+    list_audio_inputs
+    ;;
+  output)
+    list_audio_outputs
+    ;;
+  select)
+    configure_all
+    ;;
+  save)
+    save_env
+    ;;
+  load)
+    load_env
+    ;;
+  env)
+    env_display
+    ;;
+  audio)
+    configure_audio
+    ;;
+  *)
+    echo "Usage: $0 {record|play|clip|summary|json|info|select|input|output|save|load|audio|env|list}"
+    exit 1
+    ;;
+esac
+
+📄️ Additional Notes for Compatibility
+
+Ensure screentool_record.sh records with AVFoundation on macOS:
+
+# inside screentool_record.sh
+record() {
+  local filename="$1"
+  local geometry="$2"
+
+  local out_file="${ST_DIR}/${filename:-recording_$(date +%Y%m%d_%H%M%S).mp4}"
+
+  # Parse geometry
+  IFS='x+'
+  read -r w h x y <<< "$geometry"
+
+  echo "Recording screen with geometry: $geometry"
+
+  ffmpeg -f avfoundation \
+         -framerate 30 \
+         -video_size "${w}x${h}" \
+         -i "1:${ST_AUDIO_IN_DEVICE:-0}" \
+         -pix_fmt yuv420p \
+         -c:v libx264 -preset ultrafast \
+         "$out_file"
+}
+
+Ensure screentool_audio.sh lists macOS devices using ffmpeg -f avfoundation -list_devices true -i ""
+
+Conclusion
+
+You now have a macOS-compatible version of your screentool shell interface, with screen and audio capture using ffmpeg's avfoundation input. Run it with:
+
+chmod +x screentool.sh
+./screentool.sh select
+./screentool.sh record myvideo.mp4
+
+Let me know if you need stub implementations for screentool_env.sh, screentool_audio.sh, etc., adapted for macOS.
+
+[QA/global/516/516/Users/mricos/.qa/db/1749177388.answer ]
