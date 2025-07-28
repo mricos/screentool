@@ -6,35 +6,29 @@ print_macos_devices() {
   echo "Querying AVFoundation video and audio devices (macOS only)..."
   echo "-----------------------------------------------------------"
   local output
-  output="$(ffmpeg -f avfoundation -list_devices true -i "" 2>&1)"
+  output="$(ffmpeg -f avfoundation -list_devices true -i dummy 2>&1)"
   if [[ "$output" == "" ]]; then
     echo "ffmpeg output was empty; is ffmpeg installed?"
     return 1
   fi
 
-  local found=0
+  # Extract and display video devices
+  echo "VIDEO DEVICES:"
+  echo "$output" | sed -n '/AVFoundation video devices:/,/AVFoundation audio devices:/p' | \
+    grep -E '\[[0-9]+\]' | sed 's/.*\[\([0-9]*\)\] \(.*\)/  [\1] \2/'
 
-  # Print video devices section
-  echo "$output" | grep -A10 'AVFoundation video devices' | while read -r line; do
-    [[ "$line" == "" ]] && continue
-    [[ "$line" =~ 'AVFoundation video devices' ]] && found=1
-    [[ "$found" -eq 1 ]] && echo "$line"
-    [[ "$line" =~ 'AVFoundation audio devices' ]] && break
-  done
-
-  found=0
-  # Print audio devices section
   echo
-  echo "$output" | grep -A10 'AVFoundation audio devices' | while read -r line; do
-    [[ "$line" == "" ]] && continue
-    [[ "$line" =~ 'AVFoundation audio devices' ]] && found=1
-    [[ "$found" -eq 1 ]] && echo "$line"
-  done
+  echo "AUDIO DEVICES:"
+  echo "$output" | sed -n '/AVFoundation audio devices:/,$p' | \
+    grep -E '\[[0-9]+\]' | sed 's/.*\[\([0-9]*\)\] \(.*\)/  [\1] \2/'
 
   if ! echo "$output" | grep -q '\[AVFoundation'; then
-    echo "No AVFoundation devices found. Troubleshooting:"
-    echo " - Make sure ffmpeg has avfoundation enabled."
-    echo " - Check System Preferences > Security & Privacy > Privacy (Microphone, Screen Recording)."
+    echo
+    echo "⚠️  No AVFoundation devices found. Troubleshooting:"
+    echo " - Make sure ffmpeg has avfoundation enabled"
+    echo " - Check System Preferences > Security & Privacy > Privacy"
+    echo "   - Grant Terminal access to 'Screen Recording'"
+    echo "   - Grant Terminal access to 'Microphone'"
     echo " - Try running: which ffmpeg"
     return 2
   fi

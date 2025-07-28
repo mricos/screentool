@@ -55,6 +55,10 @@ save_env() {
     echo "export AUDIO_CHANNELS=\"$AUDIO_CHANNELS\""
     echo "export AUDIO_CODEC=\"$AUDIO_CODEC\""
     echo "export AUDIO_BITRATE=\"$AUDIO_BITRATE\""
+    # Save crop geometry if set
+    if [[ -n "$ST_CROP_GEOMETRY" ]]; then
+      echo "export ST_CROP_GEOMETRY=\"$ST_CROP_GEOMETRY\""
+    fi
   } > "$ST_SRC/screentool.env"
 }
 
