@@ -1,27 +1,25 @@
-st=$HOME/src/screentool/screentool.sh
-alias st=$st
-sts=$(dirname $(realpath $st))
-std=$HOME/recordings
-stf(){
-  grep -n $1 $sts/*.sh
-}
+#!/usr/bin/env bash
+# st.sh - ScreenTool CLI
 
-stl(){
-  ls -d $std
-  ls -lh $std
-}
+# Determine the script's directory
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
-stu(){
-  link=$std/latest.mp4
-  [ -L "$link" ] || return
-  target=$(readlink -f "$link")
-  rm -f "$link" "$target"
-}
+# Source environment variables
+source "$SCRIPT_DIR/env.sh"
 
-stm(){
-  link=$std/latest.mp4
-  [ -L "$link" ] || return
-  target=$(readlink -f "$link")
-  ln -s "$target" $std/$1
-}
+# Main command dispatcher
+case "$1" in
+    "mux")
+        shift
+        "$SCRIPT_DIR/screentool_mux.sh" "$@"
+        ;;
+    "mix")
+        shift
+        "$SCRIPT_DIR/screentool_mix_audio.sh" "$@"
+        ;;
+    *)
+        # Execute the main screentool script with all arguments
+        "$ST_SRC/screentool.sh" "$@"
+        ;;
+esac
 

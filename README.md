@@ -18,8 +18,13 @@ ScreenTool is a powerful, lightweight command-line screen recording utility desi
 ### Key Features
 
 - 🎥 **High-Quality Recording**: H.264 encoding with configurable quality settings
-- 🖥️ **Multi-Display Support**: Record from multiple monitors with precise geometry control
-- 📐 **Smart Area Selection**: Click-to-position with standard resolution presets
+- 🖥️ **Advanced Multi-Display Support**: 
+  - Precise monitor selection and cropping
+  - Automatic UI element exclusion (menu bar, dock)
+  - Intelligent screen geometry detection
+- 📐 **Smart Area Selection**: 
+  - Click-to-position with standard resolution presets
+  - Configurable UI cropping for clean recordings
 - 🎵 **Advanced Audio**: Multiple input sources with quality presets
 - 📊 **File Size Estimation**: Real-time bitrate and storage calculations
 - 🖼️ **ASCII Visualization**: Visual representation of recording areas
@@ -69,8 +74,9 @@ sudo apt install ffmpeg jq pulseaudio-utils x11-utils
 screentool/
 ├── screentool.sh              # Main entry point and command router
 ├── st.sh                      # Symlink for shorter command
-├── screentool_env.sh          # Environment and configuration management
+├── env.sh               # Unified environment and configuration management
 ├── screentool_record.sh       # Recording engine and FFmpeg integration
+├── screentool_record_mac.sh   # macOS-specific recording with multi-monitor support
 ├── screentool_audio.sh        # Audio device management and configuration
 ├── screentool_video.sh        # Video codec and quality settings
 ├── screentool_play.sh         # Playback and media controls
@@ -79,6 +85,12 @@ screentool/
 └── screentool.env             # Persistent configuration storage
 ```
 
+**New Features in Core Components:**
+- Enhanced multi-monitor detection
+- Intelligent screen geometry mapping
+- Configurable UI element cropping
+- Automatic monitor selection
+
 ### Platform Abstraction
 
 | Component | macOS | Linux |
@@ -86,7 +98,9 @@ screentool/
 | **Video Backend** | AVFoundation | X11Grab |
 | **Audio Backend** | AVFoundation | PulseAudio |
 | **Device Detection** | system_profiler | xrandr |
-| **Screen Capture** | Capture screen N | DISPLAY=:0 |
+| **Screen Capture** | Capture screen N with UI cropping | DISPLAY=:0 |
+| **Monitor Selection** | Intelligent geometry mapping | Display index selection |
+| **UI Element Handling** | Automatic menu/dock exclusion | Configurable area selection |
 | **Mouse Positioning** | cliclick | xdotool |
 
 ### Recording Pipeline
@@ -101,6 +115,15 @@ graph LR
     F[Audio Input] --> B
     G[Quality Settings] --> B
     H[Crop Area] --> B
+    I[UI Element Crop] --> B
+    
+    subgraph Preprocessing
+        J[Monitor Detection]
+        K[UI Cropping]
+    end
+    
+    J --> E
+    K --> H
 ```
 
 ## Configuration Reference
@@ -148,6 +171,28 @@ file_size_mb_per_hour = total_bitrate × 3600 ÷ 8 ÷ 1024
 - 10-15 fps: 0.8× (smooth motion)
 - 24-30 fps: 1.0× (full motion)
 
+### UI Cropping Configuration
+
+| Parameter | Default | Description | Example |
+|-----------|---------|-------------|---------|
+| `ST_CROP_UI_ELEMENTS` | false | Enable UI element cropping | true/false |
+| `ST_MENU_BAR_HEIGHT` | 28 | Height of menu bar in pixels | 24-32 |
+| `ST_DOCK_HEIGHT` | 70 | Height of dock in pixels | 50-90 |
+
+**Usage Example:**
+```bash
+# Enable UI cropping and customize dimensions
+export ST_CROP_UI_ELEMENTS=true
+export ST_MENU_BAR_HEIGHT=24
+export ST_DOCK_HEIGHT=60
+./screentool.sh record clean_demo.mp4
+```
+
+**Benefits:**
+- Remove distracting UI elements
+- Create professional-looking screen recordings
+- Customize crop area to match your system's UI
+
 ## Command Reference
 
 ### Recording Commands
@@ -177,6 +222,22 @@ file_size_mb_per_hour = total_bitrate × 3600 ÷ 8 ÷ 1024
 
 # Configure audio input and quality
 ./screentool.sh audio
+
+# Configure UI cropping
+./screentool.sh ui-crop  # New command!
+```
+
+**UI Cropping Options:**
+```bash
+# Enable/disable UI element cropping
+export ST_CROP_UI_ELEMENTS=true
+
+# Customize menu bar and dock height
+export ST_MENU_BAR_HEIGHT=24
+export ST_DOCK_HEIGHT=60
+
+# Save configuration
+./screentool.sh save
 ```
 
 ### Information Commands
@@ -315,6 +376,29 @@ ffmpeg -version
 - Ensure consistent sample rates
 - Check for audio buffer underruns
 - Use dedicated audio interfaces for professional work
+
+### UI Cropping Troubleshooting
+
+**Incorrect Crop Dimensions**
+```bash
+# Check current UI element settings
+echo $ST_MENU_BAR_HEIGHT
+echo $ST_DOCK_HEIGHT
+
+# Adjust for your specific display
+export ST_MENU_BAR_HEIGHT=24  # Typical range: 20-32
+export ST_DOCK_HEIGHT=60      # Typical range: 50-90
+```
+
+**Common Issues**
+- Incorrect menu bar or dock height
+- Scaling differences on Retina displays
+- Non-standard UI configurations
+
+**Debugging Tips**
+- Use `./screentool.sh geometry` to visualize screen layout
+- Experiment with different `ST_MENU_BAR_HEIGHT` and `ST_DOCK_HEIGHT` values
+- Verify screen recording permissions in System Preferences
 
 ## Development
 

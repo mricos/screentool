@@ -1,41 +1,7 @@
-[1749177388: refactor this file to work with mac s...) configure_audio ;; *) usage ;; esac]
+#!/usr/bin/env bash
 
-Refactoring screentool.sh for macOS Compatibility
-
-Below is a refactored version of your screentool.sh main dispatcher script that works on macOS. Since macOS does not use X11 (and has no xrandr, DISPLAY, etc.), we leverage native macOS tools like:
-
-- ffmpeg with avfoundation for screen/audio capture
-- system_profiler and system utilities to infer screen resolution
-- replacing xrandr/ X11 logic with macOS-compatible alternatives
-- replacing pactl (PulseAudio) with ffmpeg avfoundation audio capture
-
-We keep the CLI interface and environment logic as close as possible to the original.
-
-Recommended Directory Tree:
-
-~/src/screentool/ contains:
-
-- screentool.sh              ← this script
-- screentool_env.sh
-- screentool_record.sh
-- screentool_audio.sh
-- screentool_info.sh
-
-📜 screentool.sh (macOS-compatible version)
-
-#!/bin/bash
-# screentool.sh - macOS-compatible screen recording CLI tool
-
-# Default Paths
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-export ST_SRC=${ST_SRC:-"$HOME/src/screentool"}
-export ST_DIR=${ST_DIR:-"$HOME/recordings"}
-
-# Load module scripts
-source "$SCRIPT_DIR/screentool_env.sh"
-source "$SCRIPT_DIR/screentool_record.sh"
-source "$SCRIPT_DIR/screentool_audio.sh"
-source "$SCRIPT_DIR/screentool_info.sh"
+source "$SCRIPT_DIR/../env.sh"
 
 # ====================================================================
 # Dependency Check

@@ -1,3 +1,8 @@
+#!/usr/bin/env bash
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/../env.sh"
+
 [1749177582: refactor this file to work with mac s...PLAY="$DISPLAY"" >> "$ENV_CONFIG" }]
 
 To refactor your existing Linux X11-based screen recording tool for use on macOS with a similar command-line interface, we need to make several platform-specific changes. macOS does not use X11 or PulseAudio by default and has different methods for screen capture and audio routing.
